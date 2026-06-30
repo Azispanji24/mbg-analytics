@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MBG Analytics — Association Rule Mining Menu Makan Bergizi Gratis</title>
+  <meta name="description" content="Dashboard interaktif analisis pola kombinasi menu MBG menggunakan Association Rule Mining (FP-Growth). Kelompok 6 — Tugas Machine Learning." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<!-- ─── HERO / HEADER ──────────────────────────────────────────────── -->
+<header class="hero">
+  <div class="hero-bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="brand-icon">🍱</span>
+      <span class="brand-name">MBG <span class="brand-accent">Analytics</span></span>
+    </div>
+    <div class="nav-links">
+      <a href="#overview">Overview</a>
+      <a href="#rules">Rules</a>
+      <a href="#itemsets">Itemsets</a>
+      <a href="#network">Network</a>
+    </div>
+    <div class="nav-badge">Kelompok 6</div>
+  </nav>
+
+  <div class="hero-content">
+    <div class="hero-tag">Machine Learning · Association Rule Mining · FP-Growth</div>
+    <h1 class="hero-title">
+      Analisis Pola <span class="gradient-text">Menu MBG</span>
+    </h1>
+    <p class="hero-subtitle">
+      Mengekstrak pola kombinasi makanan dari <strong>846 foto menu</strong>
+      Program Makan Bergizi Gratis menggunakan OCR + FP-Growth Algorithm.
+    </p>
+
+    <!-- Status / Start -->
+    <div class="hero-actions">
+      <button id="btn-preset" class="btn-primary" onclick="startPreset()">
+        <span class="btn-icon">⚡</span> Muat Data Preset <span class="btn-sub">(~2 detik)</span>
+      </button>
+      <button id="btn-drive" class="btn-ghost" onclick="startDrive()">
+        <span class="btn-icon">☁️</span> Analisis dari Drive <span class="btn-sub">(butuh lama)</span>
+      </button>
+      <button id="btn-reset" class="btn-danger" onclick="resetProcessing()" style="display:none">
+        <span class="btn-icon">🔄</span> Reset
+      </button>
+    </div>
+
+    <!-- Progress Bar -->
+    <div id="progress-container" class="progress-container" style="display:none">
+      <div class="progress-header">
+        <span id="stage-label" class="stage-label">Memulai...</span>
+        <span id="progress-pct" class="progress-pct">0%</span>
+      </div>
+      <div class="progress-track">
+        <div id="progress-bar" class="progress-fill" style="width:0%"></div>
+      </div>
+      <div id="progress-msg" class="progress-msg">Menginisialisasi...</div>
+    </div>
+  </div>
+
+  <!-- Kelompok Tag -->
+  <div class="hero-group-info">
+    <div class="group-card">
+      <div class="group-label">Anggota Kelompok</div>
+      <div class="group-members">
+        <span>Dwi Saktya H.A.</span>
+        <span>Aziz Panji G.</span>
+        <span>Ariel Aziz B.</span>
+        <span>Achmad Ridho S.</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ─── STATS STRIP ────────────────────────────────────────────────── -->
+<section id="overview" class="stats-strip">
+  <div class="stat-card" id="stat-images">
+    <div class="stat-icon">🖼️</div>
+    <div class="stat-value" id="val-images">—</div>
+    <div class="stat-label">Total Gambar</div>
+  </div>
+  <div class="stat-card" id="stat-tx">
+    <div class="stat-icon">🧾</div>
+    <div class="stat-value" id="val-tx">—</div>
+    <div class="stat-label">Transaksi Valid</div>
+  </div>
+  <div class="stat-card" id="stat-items">
+    <div class="stat-icon">🥗</div>
+    <div class="stat-value" id="val-items">—</div>
+    <div class="stat-label">Item Unik</div>
+  </div>
+  <div class="stat-card" id="stat-freq">
+    <div class="stat-icon">📊</div>
+    <div class="stat-value" id="val-freq">—</div>
+    <div class="stat-label">Frequent Itemsets</div>
+  </div>
+  <div class="stat-card" id="stat-rules">
+    <div class="stat-icon">🔗</div>
+    <div class="stat-value" id="val-rules">—</div>
+    <div class="stat-label">Association Rules</div>
+  </div>
+  <div class="stat-card highlight" id="stat-top">
+    <div class="stat-icon">⭐</div>
+    <div class="stat-value" id="val-top">—</div>
+    <div class="stat-label">Rules Signifikan</div>
+  </div>
+</section>
+
+<!-- ─── CHARTS ROW ─────────────────────────────────────────────────── -->
+<section class="charts-section">
+  <div class="container">
+    <div class="charts-grid">
+
+      <!-- Item Frequency -->
+      <div class="chart-card wide">
+        <div class="card-header">
+          <h2>Frekuensi Item Makanan</h2>
+          <span class="card-badge">Top 15</span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chart-items"></canvas>
+        </div>
+      </div>
+
+      <!-- Format Dist Donut -->
+      <div class="chart-card">
+        <div class="card-header">
+          <h2>Format Gambar</h2>
+        </div>
+        <div class="chart-wrapper small">
+          <canvas id="chart-formats"></canvas>
+        </div>
+      </div>
+
+      <!-- Items per Transaction -->
+      <div class="chart-card">
+        <div class="card-header">
+          <h2>Distribusi Item / Transaksi</h2>
+        </div>
+        <div class="chart-wrapper small">
+          <canvas id="chart-dist"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ─── ASSOCIATION RULES TABLE ────────────────────────────────────── -->
+<section id="rules" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Association Rules</h2>
+      <p class="section-desc">Pola kombinasi item makanan yang sering muncul bersamaan. Diurutkan berdasarkan <strong>Lift</strong> tertinggi.</p>
+    </div>
+
+    <!-- Filter Controls -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <label>Min Lift</label>
+        <input type="range" id="filter-lift" min="0" max="5" step="0.1" value="0" oninput="applyFilters()" />
+        <span id="lift-val" class="filter-val">0.0</span>
+      </div>
+      <div class="filter-group">
+        <label>Min Confidence</label>
+        <input type="range" id="filter-conf" min="0" max="1" step="0.05" value="0" oninput="applyFilters()" />
+        <span id="conf-val" class="filter-val">0%</span>
+      </div>
+      <div class="filter-group">
+        <label>Tampilkan</label>
+        <select id="filter-limit" onchange="applyFilters()">
+          <option value="10">10 rules</option>
+          <option value="20" selected>20 rules</option>
+          <option value="50">50 rules</option>
+          <option value="999">Semua</option>
+        </select>
+      </div>
+      <button class="btn-filter-reset" onclick="resetFilters()">Reset Filter</button>
+    </div>
+
+    <div class="table-wrapper">
+      <table class="rules-table" id="rules-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Antecedents <span class="th-sub">(Jika ada...)</span></th>
+            <th>Consequents <span class="th-sub">(...maka ada)</span></th>
+            <th>Support</th>
+            <th>Confidence</th>
+            <th>Lift</th>
+            <th>Kekuatan</th>
+          </tr>
+        </thead>
+        <tbody id="rules-tbody">
+          <tr><td colspan="7" class="table-empty">Menunggu data analisis...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FREQUENT ITEMSETS ─────────────────────────────────────────── -->
+<section id="itemsets" class="section section-alt">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Frequent Itemsets</h2>
+      <p class="section-desc">Kombinasi item makanan yang muncul minimal 5% dalam seluruh menu MBG.</p>
+    </div>
+    <div id="itemsets-grid" class="itemsets-grid">
+      <div class="itemset-placeholder">Analisis belum dimulai...</div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── NETWORK GRAPH ──────────────────────────────────────────────── -->
+<section id="network" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Network Graf Asosiasi</h2>
+      <p class="section-desc">Visualisasi hubungan antar item makanan. Ketebalan garis = kekuatan asosiasi (lift). Ukuran node = frekuensi kemunculan.</p>
+    </div>
+    <div class="network-container">
+      <div id="network-graph"></div>
+      <div class="network-legend">
+        <div class="legend-item"><span class="legend-dot high"></span>Lift Tinggi (>2.0)</div>
+        <div class="legend-item"><span class="legend-dot mid"></span>Lift Sedang (1.5–2.0)</div>
+        <div class="legend-item"><span class="legend-dot low"></span>Lift Rendah (<1.5)</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── SCATTER PLOT: Support vs Confidence ───────────────────────── -->
+<section class="section section-alt">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Support vs Confidence</h2>
+      <p class="section-desc">Scatter plot semua rules. Ukuran titik = nilai Lift.</p>
+    </div>
+    <div class="chart-card full">
+      <div class="chart-wrapper tall">
+        <canvas id="chart-scatter"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── TOP RULES HIGHLIGHT ────────────────────────────────────────── -->
+<section class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">🏆 Rules Terbaik</h2>
+      <p class="section-desc">Rules dengan Lift > 1.5 dan Confidence > 65% — kombinasi paling bermakna.</p>
+    </div>
+    <div id="top-rules-grid" class="top-rules-grid">
+      <div class="top-rule-placeholder">Analisis belum dimulai...</div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FOOTER ─────────────────────────────────────────────────────── -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <span class="brand-icon">🍱</span>
+        <span>MBG Analytics</span>
+      </div>
+      <div class="footer-info">
+        <strong>Tugas Machine Learning</strong> — Kelompok 6 &nbsp;|&nbsp;
+        Metode: Association Rule Mining (FP-Growth) &nbsp;|&nbsp;
+        Dataset: 846 Foto Menu MBG
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

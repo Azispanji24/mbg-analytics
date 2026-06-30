@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MBG Analytics — Association Rule Mining Menu Makan Bergizi Gratis</title>
+  <meta name="description" content="Dashboard interaktif analisis pola kombinasi menu MBG menggunakan Association Rule Mining (FP-Growth) dari 846 foto menu. Kelompok 6 — Tugas Machine Learning." />
+  <meta property="og:title" content="MBG Analytics — Association Rule Mining" />
+  <meta property="og:description" content="Analisis pola kombinasi makanan dari 846 foto menu Program Makan Bergizi Gratis menggunakan FP-Growth Algorithm." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    /* ── RESET & BASE ───────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    :root {
+      --bg-900:#0a0b0f; --bg-800:#12141a; --bg-700:#1a1d27; --bg-600:#22263a; --bg-card:#161921;
+      --accent-1:#6c63ff; --accent-2:#00d4ff; --accent-3:#ff6b9d; --accent-4:#ffd93d;
+      --accent-green:#22c55e; --accent-orange:#f97316;
+      --text-primary:#f1f5f9; --text-secondary:#94a3b8; --text-muted:#475569;
+      --border:rgba(255,255,255,0.06); --border-bright:rgba(108,99,255,0.35);
+      --radius-sm:8px; --radius-md:14px; --radius-lg:22px;
+      --shadow-glow:0 0 40px rgba(108,99,255,0.25);
+    }
+    body { font-family:'Inter',sans-serif; background:var(--bg-900); color:var(--text-primary); line-height:1.6; overflow-x:hidden; }
+    ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:var(--bg-900)} ::-webkit-scrollbar-thumb{background:var(--bg-600);border-radius:3px} ::-webkit-scrollbar-thumb:hover{background:var(--accent-1)}
+
+    /* ── HERO ───────────────────────────────────────────────── */
+    .hero { position:relative; min-height:100vh; display:flex; flex-direction:column; overflow:hidden; background:radial-gradient(ellipse at 20% 50%,rgba(108,99,255,.15) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(0,212,255,.1) 0%,transparent 55%),var(--bg-900); padding-bottom:60px; }
+    .orb { position:absolute; border-radius:50%; filter:blur(80px); animation:floatOrb 8s ease-in-out infinite; pointer-events:none; }
+    .orb-1{width:500px;height:500px;background:radial-gradient(circle,rgba(108,99,255,.18),transparent 70%);top:-150px;left:-100px}
+    .orb-2{width:400px;height:400px;background:radial-gradient(circle,rgba(0,212,255,.12),transparent 70%);top:100px;right:-80px;animation-delay:-4s}
+    .orb-3{width:300px;height:300px;background:radial-gradient(circle,rgba(255,107,157,.1),transparent 70%);bottom:100px;left:40%;animation-delay:-2s}
+    @keyframes floatOrb{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-30px) scale(1.05)}}
+
+    /* ── NAVBAR ─────────────────────────────────────────────── */
+    .navbar{position:relative;z-index:10;display:flex;align-items:center;gap:24px;padding:24px 48px;flex-wrap:wrap}
+    .nav-brand{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:800;letter-spacing:-.5px}
+    .brand-icon{font-size:28px} .brand-accent{color:var(--accent-1)}
+    .nav-links{display:flex;gap:24px;margin-left:auto}
+    .nav-links a{color:var(--text-secondary);text-decoration:none;font-size:14px;font-weight:500;transition:color .2s}
+    .nav-links a:hover{color:var(--text-primary)}
+    .nav-badge{background:linear-gradient(135deg,var(--accent-1),var(--accent-2));color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:999px}
+
+    /* ── HERO CONTENT ───────────────────────────────────────── */
+    .hero-content{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;text-align:center;padding:70px 24px 40px;max-width:880px;margin:0 auto}
+    .hero-tag{display:inline-flex;align-items:center;gap:8px;background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.3);color:var(--accent-1);font-size:12px;font-weight:600;padding:6px 16px;border-radius:999px;letter-spacing:.5px;text-transform:uppercase;margin-bottom:28px;animation:fadeDown .6s ease both}
+    .hero-title{font-size:clamp(36px,6vw,70px);font-weight:900;line-height:1.08;letter-spacing:-2px;margin-bottom:20px;animation:fadeDown .6s .1s ease both}
+    .gradient-text{background:linear-gradient(135deg,var(--accent-1),var(--accent-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .hero-subtitle{font-size:17px;color:var(--text-secondary);max-width:620px;margin-bottom:36px;animation:fadeDown .6s .2s ease both}
+    .hero-subtitle strong{color:var(--text-primary)}
+    @keyframes fadeDown{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
+
+    /* ── GROUP CARD ─────────────────────────────────────────── */
+    .group-card{display:flex;align-items:center;gap:20px;flex-wrap:wrap;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 24px;margin-top:auto;position:relative;z-index:5;align-self:center}
+    .group-label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
+    .group-members{display:flex;gap:10px;flex-wrap:wrap}
+    .group-members span{background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.2);color:var(--accent-1);font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px}
+
+    /* ── STATS STRIP ────────────────────────────────────────── */
+    .stats-strip{display:flex;justify-content:center;flex-wrap:wrap;gap:14px;padding:28px 40px;background:linear-gradient(180deg,rgba(108,99,255,.05),transparent);border-bottom:1px solid var(--border)}
+    .stat-card{flex:1;min-width:140px;max-width:190px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px;text-align:center;transition:all .3s;cursor:default}
+    .stat-card:hover{border-color:var(--border-bright);transform:translateY(-4px);box-shadow:var(--shadow-glow)}
+    .stat-card.hl{border-color:rgba(108,99,255,.4);background:linear-gradient(135deg,rgba(108,99,255,.12),rgba(0,212,255,.06))}
+    .stat-icon{font-size:26px;margin-bottom:7px} .stat-value{font-size:30px;font-weight:900;font-family:'JetBrains Mono',monospace;background:linear-gradient(135deg,var(--text-primary),var(--text-secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .stat-card.hl .stat-value{background:linear-gradient(135deg,var(--accent-1),var(--accent-2));-webkit-background-clip:text;background-clip:text}
+    .stat-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px;font-weight:600}
+
+    /* ── SECTION ────────────────────────────────────────────── */
+    .container{max-width:1280px;margin:0 auto;padding:0 40px}
+    .section{padding:72px 0} .section-alt{background:var(--bg-800)}
+    .section-header{text-align:center;margin-bottom:44px}
+    .section-title{font-size:34px;font-weight:800;letter-spacing:-1px;margin-bottom:10px}
+    .section-desc{color:var(--text-secondary);font-size:15px;max-width:580px;margin:0 auto}
+
+    /* ── CHARTS ─────────────────────────────────────────────── */
+    .charts-section{padding:56px 0;background:var(--bg-800)}
+    .charts-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:18px}
+    .chart-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px;transition:border-color .3s}
+    .chart-card:hover{border-color:var(--border-bright)}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .card-header h2{font-size:16px;font-weight:700;letter-spacing:-.3px}
+    .card-badge{background:rgba(108,99,255,.15);border:1px solid rgba(108,99,255,.25);color:var(--accent-1);font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:.5px}
+    .chart-wrapper{position:relative} .chart-wrapper.h280{height:280px} .chart-wrapper.h220{height:220px} .chart-wrapper.h380{height:380px}
+
+    /* ── FILTER BAR ─────────────────────────────────────────── */
+    .filter-bar{display:flex;align-items:center;gap:20px;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 22px;margin-bottom:20px}
+    .filter-group{display:flex;align-items:center;gap:10px}
+    .filter-group label{font-size:13px;font-weight:600;color:var(--text-secondary);white-space:nowrap}
+    .filter-group input[type=range]{width:110px;accent-color:var(--accent-1);cursor:pointer}
+    .filter-group select{background:var(--bg-700);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;font-size:13px;cursor:pointer;font-family:Inter,sans-serif}
+    .fval{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--accent-2);min-width:34px}
+    .btn-freset{margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--text-secondary);font-size:13px;font-weight:500;padding:6px 14px;border-radius:var(--radius-sm);cursor:pointer;transition:all .2s;font-family:Inter,sans-serif}
+    .btn-freset:hover{border-color:var(--accent-1);color:var(--accent-1)}
+
+    /* ── RULES TABLE ────────────────────────────────────────── */
+    .table-wrapper{overflow-x:auto;border-radius:var(--radius-lg);border:1px solid var(--border)}
+    .rtable{width:100%;border-collapse:collapse;font-size:14px}
+    .rtable thead th{background:var(--bg-700);padding:13px 16px;text-align:left;font-weight:700;color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap}
+    .rtable tbody tr{background:var(--bg-card);border-bottom:1px solid var(--border);transition:background .2s}
+    .rtable tbody tr:hover{background:var(--bg-700)}
+    .rtable tbody td{padding:13px 16px;vertical-align:middle}
+    .tbl-empty{text-align:center;color:var(--text-muted);padding:48px!important;font-size:15px}
+    .rule-num{color:var(--text-muted);font-family:'JetBrains Mono',monospace;font-size:12px}
+    .itag{display:inline-block;background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.22);color:var(--accent-1);font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;margin:2px}
+    .itag.cons{background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.22);color:var(--accent-2)}
+    .mval{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600}
+    .mval.s{color:var(--accent-green)} .mval.c{color:var(--accent-4)} .mval.l{color:var(--accent-3)}
+    .sbadge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.3px}
+    .shigh{background:rgba(255,107,157,.15);border:1px solid rgba(255,107,157,.3);color:var(--accent-3)}
+    .smid{background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.25);color:var(--accent-orange)}
+    .slow{background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.15);color:var(--text-muted)}
+
+    /* ── ITEMSETS GRID ──────────────────────────────────────── */
+    .itemsets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+    .icard{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;transition:all .3s;cursor:default}
+    .icard:hover{border-color:var(--border-bright);transform:translateY(-3px);box-shadow:var(--shadow-glow)}
+    .icard-items{font-size:14px;font-weight:600;margin-bottom:10px;color:var(--text-primary)}
+    .icard-items .ii{color:var(--accent-1)}
+    .icard-footer{display:flex;justify-content:space-between;align-items:center}
+    .sbar-wrap{flex:1;margin-right:10px} .sbar-track{width:100%;height:5px;background:rgba(255,255,255,.06);border-radius:999px;overflow:hidden}
+    .sbar-fill{height:100%;background:linear-gradient(90deg,var(--accent-1),var(--accent-2));border-radius:999px}
+    .snum{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--text-secondary);white-space:nowrap}
+    .lbadge{font-size:11px;color:var(--text-muted);background:rgba(255,255,255,.05);padding:2px 7px;border-radius:999px;margin-left:7px}
+
+    /* ── NETWORK GRAPH ──────────────────────────────────────── */
+    .net-container{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px}
+    #network-graph{width:100%;height:480px;display:flex;align-items:center;justify-content:center}
+    #network-graph svg{width:100%;height:100%}
+    .net-legend{display:flex;gap:18px;justify-content:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+    .leg-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-secondary);font-weight:500}
+    .leg-dot{width:10px;height:10px;border-radius:50%} .leg-dot.h{background:var(--accent-3)} .leg-dot.m{background:var(--accent-orange)} .leg-dot.l{background:var(--text-muted)}
+
+    /* ── TOP RULES ──────────────────────────────────────────── */
+    .top-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:18px}
+    .top-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px;transition:all .3s;position:relative;overflow:hidden}
+    .top-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent-1),var(--accent-2))}
+    .top-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-glow);border-color:var(--border-bright)}
+    .top-num{position:absolute;top:14px;right:14px;font-size:12px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+    .top-arrow{text-align:center;margin:10px 0;font-size:18px}
+    .top-ant,.top-cons{display:flex;flex-wrap:wrap;gap:5px;padding:10px;border-radius:var(--radius-sm)}
+    .top-ant{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.15)}
+    .top-cons{background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.15)}
+    .top-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:7px}
+    .top-metrics{display:flex;justify-content:space-between;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+    .met-item{text-align:center} .met-val{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700} .met-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+
+    /* ── FOOTER ─────────────────────────────────────────────── */
+    .footer{background:var(--bg-800);border-top:1px solid var(--border);padding:28px 0}
+    .footer-content{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px}
+    .footer-brand{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:800}
+    .footer-info{font-size:13px;color:var(--text-muted)}
+    .footer-info strong{color:var(--text-secondary)}
+    .footer-links{display:flex;gap:14px}
+    .footer-links a{color:var(--text-muted);text-decoration:none;font-size:13px;transition:color .2s}
+    .footer-links a:hover{color:var(--accent-1)}
+
+    /* ── RESPONSIVE ─────────────────────────────────────────── */
+    @media(max-width:900px){.navbar{padding:18px 20px}.nav-links{display:none}.container{padding:0 20px}.charts-grid{grid-template-columns:1fr}.stats-strip{padding:20px}.hero-title{font-size:36px}.group-card{flex-direction:column;text-align:center}}
+  </style>
+</head>
+<body>
+
+<!-- ─── HERO ──────────────────────────────────────────────────────── -->
+<header class="hero">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="brand-icon">🍱</span>
+      <span>MBG <span class="brand-accent">Analytics</span></span>
+    </div>
+    <div class="nav-links">
+      <a href="#overview">Overview</a>
+      <a href="#rules">Rules</a>
+      <a href="#itemsets">Itemsets</a>
+      <a href="#network">Network</a>
+      <a href="#top-rules">Top Rules</a>
+    </div>
+    <div class="nav-badge">Kelompok 6</div>
+  </nav>
+
+  <div class="hero-content">
+    <div class="hero-tag">Machine Learning &nbsp;·&nbsp; Association Rule Mining &nbsp;·&nbsp; FP-Growth</div>
+    <h1 class="hero-title">
+      Analisis Pola<br /><span class="gradient-text">Menu MBG</span>
+    </h1>
+    <p class="hero-subtitle">
+      Mengekstrak pola kombinasi makanan dari <strong>846 foto menu</strong>
+      Program Makan Bergizi Gratis menggunakan EasyOCR + FP-Growth Algorithm.
+      Ditemukan <strong>56 association rules</strong> dari 830 transaksi valid.
+    </p>
+  </div>
+
+  <div class="group-card" style="position:relative;z-index:5;margin:0 auto 0;">
+    <div class="group-label">Anggota Kelompok 6</div>
+    <div class="group-members">
+      <span>Dwi Saktya Hari Aditya</span>
+      <span>Aziz Panji Gumilang</span>
+      <span>Ariel Aziz Bhadrika</span>
+      <span>Achmad Ridho Saputra</span>
+    </div>
+  </div>
+</header>
+
+<!-- ─── STATS STRIP ────────────────────────────────────────────────── -->
+<section id="overview" class="stats-strip">
+  <div class="stat-card"><div class="stat-icon">🖼️</div><div class="stat-value" id="v1">846</div><div class="stat-label">Total Gambar</div></div>
+  <div class="stat-card"><div class="stat-icon">🧾</div><div class="stat-value" id="v2">830</div><div class="stat-label">Transaksi Valid</div></div>
+  <div class="stat-card"><div class="stat-icon">🥗</div><div class="stat-value" id="v3">23</div><div class="stat-label">Item Unik</div></div>
+  <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-value" id="v4">101</div><div class="stat-label">Frequent Itemsets</div></div>
+  <div class="stat-card"><div class="stat-icon">🔗</div><div class="stat-value" id="v5">56</div><div class="stat-label">Association Rules</div></div>
+  <div class="stat-card hl"><div class="stat-icon">⭐</div><div class="stat-value" id="v6">5</div><div class="stat-label">Rules Signifikan</div></div>
+</section>
+
+<!-- ─── CHARTS ─────────────────────────────────────────────────────── -->
+<section class="charts-section">
+  <div class="container">
+    <div class="charts-grid">
+      <div class="chart-card" style="grid-column:1">
+        <div class="card-header"><h2>Frekuensi Item Makanan</h2><span class="card-badge">Top 15</span></div>
+        <div class="chart-wrapper h280"><canvas id="chartItems"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="card-header"><h2>Format Gambar</h2></div>
+        <div class="chart-wrapper h220"><canvas id="chartFormats"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="card-header"><h2>Item / Transaksi</h2></div>
+        <div class="chart-wrapper h220"><canvas id="chartDist"></canvas></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── RULES TABLE ────────────────────────────────────────────────── -->
+<section id="rules" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Association Rules</h2>
+      <p class="section-desc">Pola kombinasi item makanan. Diurutkan berdasarkan <strong>Lift</strong> tertinggi.</p>
+    </div>
+    <div class="filter-bar">
+      <div class="filter-group">
+        <label>Min Lift</label>
+        <input type="range" id="flift" min="0" max="4" step="0.1" value="0" oninput="applyF()"/>
+        <span class="fval" id="vlift">0.0</span>
+      </div>
+      <div class="filter-group">
+        <label>Min Confidence</label>
+        <input type="range" id="fconf" min="0" max="1" step="0.05" value="0" oninput="applyF()"/>
+        <span class="fval" id="vconf">0%</span>
+      </div>
+      <div class="filter-group">
+        <label>Tampilkan</label>
+        <select id="flimit" onchange="applyF()">
+          <option value="10">10 rules</option>
+          <option value="20" selected>20 rules</option>
+          <option value="50">50 rules</option>
+          <option value="9999">Semua</option>
+        </select>
+      </div>
+      <button class="btn-freset" onclick="resetF()">Reset Filter</button>
+    </div>
+    <div class="table-wrapper">
+      <table class="rtable">
+        <thead><tr>
+          <th>#</th><th>Jika ada (Antecedents)</th><th>Maka ada (Consequents)</th>
+          <th>Support</th><th>Confidence</th><th>Lift</th><th>Kekuatan</th>
+        </tr></thead>
+        <tbody id="rtbody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FREQUENT ITEMSETS ──────────────────────────────────────────── -->
+<section id="itemsets" class="section section-alt">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Frequent Itemsets</h2>
+      <p class="section-desc">Kombinasi item makanan yang muncul minimal 5% dalam seluruh menu MBG.</p>
+    </div>
+    <div class="itemsets-grid" id="igrid"></div>
+  </div>
+</section>
+
+<!-- ─── NETWORK GRAPH ──────────────────────────────────────────────── -->
+<section id="network" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Network Graf Asosiasi</h2>
+      <p class="section-desc">Ketebalan garis = kekuatan asosiasi (Lift). Ukuran node = frekuensi kemunculan item. Bisa di-drag!</p>
+    </div>
+    <div class="net-container">
+      <div id="network-graph"></div>
+      <div class="net-legend">
+        <div class="leg-item"><span class="leg-dot h"></span>Lift Tinggi (>2.0)</div>
+        <div class="leg-item"><span class="leg-dot m"></span>Lift Sedang (1.5–2.0)</div>
+        <div class="leg-item"><span class="leg-dot l"></span>Lift Rendah (&lt;1.5)</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── SCATTER PLOT ────────────────────────────────────────────────── -->
+<section class="section section-alt">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Support vs Confidence</h2>
+      <p class="section-desc">Setiap titik = satu rule. Ukuran titik = nilai Lift.</p>
+    </div>
+    <div class="chart-card" style="width:100%">
+      <div class="chart-wrapper h380"><canvas id="chartScatter"></canvas></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── TOP RULES ──────────────────────────────────────────────────── -->
+<section id="top-rules" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">🏆 Rules Terbaik</h2>
+      <p class="section-desc">Rules dengan Lift > 1.5 dan Confidence > 65% — kombinasi paling bermakna secara statistik.</p>
+    </div>
+    <div class="top-grid" id="topgrid"></div>
+  </div>
+</section>
+
+<!-- ─── FOOTER ─────────────────────────────────────────────────────── -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-content">
+      <div class="footer-brand"><span>🍱</span><span>MBG Analytics</span></div>
+      <div class="footer-info">
+        <strong>Tugas Machine Learning</strong> — Kelompok 6 &nbsp;|&nbsp;
+        Dataset: 846 Foto Menu MBG &nbsp;|&nbsp; Metode: FP-Growth
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/Azispanji24/mbg-analytics" target="_blank">GitHub</a>
+        <a href="mailto:azispanji92@gmail.com">Email</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- ─── DATA & SCRIPTS ──────────────────────────────────────────────── -->
+<script>
+/* ── EMBEDDED DATASET (hasil analisis notebook, 846 gambar) ── */
+const DATA = {
+  item_frequency: {"nasi":694,"telur":335,"ayam":319,"tahu":247,"sayur":245,"jeruk":237,"susu":229,"tempe":215,"pisang":205,"roti":176,"kacang":154,"ikan":128,"apel":123,"semangka":118,"melon":107,"kentang":98,"ubi":89,"abon":71,"jamur":76,"sup":71,"rendang":58,"kurma":52,"mie":48},
+  format_dist: {"PNG":444,"JPG":245,"JPEG":157},
+  item_dist: {"1":37,"2":57,"3":154,"4":256,"5":197,"6":80,"7":30,"8":14,"9":3,"10":2},
+  frequent_itemsets: [
+    {i:"nasi",s:.8361,l:1},{i:"telur",s:.4036,l:1},{i:"ayam",s:.3843,l:1},
+    {i:"nasi, telur",s:.3313,l:2},{i:"nasi, ayam",s:.3289,l:2},{i:"tahu",s:.2976,l:1},
+    {i:"sayur",s:.2952,l:1},{i:"sayur, nasi",s:.2855,l:2},{i:"jeruk",s:.2855,l:1},
+    {i:"nasi, tahu",s:.2783,l:2},{i:"susu",s:.2759,l:1},{i:"tempe",s:.2590,l:1},
+    {i:"jeruk, nasi",s:.2578,l:2},{i:"tempe, nasi",s:.2482,l:2},{i:"pisang",s:.2470,l:1},
+    {i:"pisang, nasi",s:.2145,l:2},{i:"roti",s:.2120,l:1},{i:"nasi, susu",s:.2000,l:2},
+    {i:"kacang",s:.1855,l:1},{i:"telur, susu",s:.1747,l:2},{i:"ikan",s:.1542,l:1},
+    {i:"nasi, ayam, telur",s:.1494,l:3},{i:"apel",s:.1410,l:1},{i:"semangka",s:.1422,l:1},
+    {i:"nasi, tahu, sayur",s:.1398,l:3},{i:"nasi, roti",s:.1373,l:2},
+    {i:"roti, susu",s:.1289,l:2},{i:"nasi, susu, telur",s:.1289,l:3},
+    {i:"roti, telur",s:.1277,l:2},{i:"nasi, ikan",s:.1229,l:2},
+    {i:"nasi, jeruk, tempe",s:.1157,l:3},{i:"tempe, sayur",s:.1169,l:2},
+    {i:"kentang",s:.1181,l:1},{i:"nasi, apel",s:.1036,l:2},{i:"nasi, pisang, telur",s:.1036,l:3},
+    {i:"nasi, tempe, sayur",s:.1000,l:3},{i:"tempe, telur",s:.0904,l:2},
+    {i:"nasi, roti, telur",s:.0867,l:3},{i:"jeruk, nasi, tempe",s:.0867,l:3},
+    {i:"abon",s:.0855,l:1},{i:"jeruk, sayur",s:.0771,l:2},{i:"nasi, kentang",s:.0795,l:2},
+    {i:"roti, ayam",s:.0687,l:2},{i:"pisang, susu",s:.0627,l:2},
+    {i:"tempe, sayur, ayam",s:.0602,l:3},{i:"pisang, tempe",s:.0590,l:2},
+    {i:"abon, roti",s:.0518,l:2},{i:"jeruk, susu",s:.0530,l:2},{i:"ayam, susu",s:.0506,l:2},
+    {i:"roti, nasi, susu",s:.0506,l:3},{i:"jeruk, ayam, tempe",s:.0542,l:3},
+    {i:"tempe, telur, nasi",s:.0904,l:3},{i:"roti, ayam, telur",s:.0506,l:3},
+    {i:"jeruk, nasi, tempe, ayam",s:.0542,l:4},{i:"tempe, sayur, ayam, nasi",s:.0602,l:4},
+  ],
+  rules: [
+    {a:"abon",c:"roti",s:.0518,cf:.7288,l:3.437},
+    {a:"roti, telur",c:"susu",s:.0795,cf:.6226,l:2.257},
+    {a:"roti",c:"susu",s:.1289,cf:.6080,l:2.204},
+    {a:"nasi, apel",c:"susu",s:.0795,cf:.7669,l:2.780},
+    {a:"apel",c:"susu",s:.0867,cf:.6149,l:2.229},
+    {a:"melon",c:"pisang",s:.0590,cf:.5517,l:2.234},
+    {a:"kurma",c:"pisang",s:.0530,cf:.6731,l:2.725},
+    {a:"nasi, ikan",c:"tahu",s:.0795,cf:.6471,l:2.176},
+    {a:"ikan",c:"tahu",s:.0867,cf:.5620,l:1.890},
+    {a:"roti, ayam",c:"telur",s:.0506,cf:.7368,l:1.826},
+    {a:"semangka",c:"pisang",s:.0687,cf:.4831,l:1.956},
+    {a:"ayam, susu",c:"telur",s:.0506,cf:.7000,l:1.734},
+    {a:"pisang, susu",c:"telur",s:.0627,cf:.6933,l:1.718},
+    {a:"jeruk, susu",c:"telur",s:.0530,cf:.6875,l:1.703},
+    {a:"nasi, tahu",c:"sayur",s:.1398,cf:.5028,l:1.704},
+    {a:"nasi, susu",c:"telur",s:.1289,cf:.6446,l:1.597},
+    {a:"jeruk, nasi, tempe",c:"ayam",s:.0542,cf:.6081,l:1.582},
+    {a:"susu",c:"telur",s:.1747,cf:.6332,l:1.569},
+    {a:"roti, nasi",c:"telur",s:.0867,cf:.6316,l:1.565},
+    {a:"roti, nasi, susu",c:"telur",s:.0506,cf:.6269,l:1.553},
+    {a:"roti, susu",c:"telur",s:.0795,cf:.6168,l:1.528},
+    {a:"roti",c:"telur",s:.1277,cf:.6023,l:1.492},
+    {a:"tempe, nasi",c:"sayur",s:.1000,cf:.4030,l:1.366},
+    {a:"jeruk, ayam, tempe",c:"nasi",s:.0542,cf:1.000,l:1.196},
+    {a:"tempe, sayur, ayam",c:"nasi",s:.0602,cf:1.000,l:1.196},
+    {a:"tempe, telur",c:"nasi",s:.0904,cf:1.000,l:1.196},
+    {a:"tempe, sayur",c:"nasi",s:.1169,cf:.9898,l:1.184},
+    {a:"jeruk, sayur",c:"nasi",s:.0771,cf:.9846,l:1.178},
+    {a:"pisang, tempe",c:"nasi",s:.0590,cf:.9800,l:1.172},
+    {a:"ayam, telur",c:"nasi",s:.1494,cf:.9615,l:1.150},
+    {a:"nasi",c:"ayam",s:.3289,cf:.3934,l:1.024},
+    {a:"nasi",c:"tahu",s:.2783,cf:.3328,l:1.118},
+    {a:"nasi",c:"sayur",s:.2855,cf:.3414,l:1.157},
+    {a:"nasi",c:"jeruk",s:.2578,cf:.3083,l:1.080},
+    {a:"nasi",c:"tempe",s:.2482,cf:.2968,l:1.146},
+    {a:"telur",c:"nasi",s:.3313,cf:.8209,l:.981},
+    {a:"ayam",c:"nasi",s:.3289,cf:.8558,l:1.024},
+    {a:"tahu",c:"nasi",s:.2783,cf:.9355,l:1.118},
+    {a:"sayur",c:"nasi",s:.2855,cf:.9680,l:1.157},
+    {a:"jeruk",c:"nasi",s:.2578,cf:.9025,l:1.080},
+    {a:"tempe",c:"nasi",s:.2482,cf:.9580,l:1.146},
+    {a:"pisang",c:"nasi",s:.2145,cf:.8684,l:1.039},
+    {a:"roti",c:"nasi",s:.1373,cf:.6477,l:.775},
+    {a:"kacang",c:"nasi",s:.1518,cf:.8189,l:.979},
+    {a:"abon",c:"nasi",s:.0687,cf:.8028,l:.960},
+    {a:"ikan",c:"nasi",s:.1229,cf:.7973,l:.953},
+    {a:"apel",c:"nasi",s:.1036,cf:.7345,l:.879},
+    {a:"semangka",c:"nasi",s:.0988,cf:.6949,l:.831},
+    {a:"kentang",c:"nasi",s:.0795,cf:.6726,l:.805},
+    {a:"susu",c:"nasi",s:.2000,cf:.7249,l:.867},
+    {a:"nasi",c:"telur",s:.3313,cf:.3961,l:.981},
+    {a:"nasi, ayam",c:"telur",s:.1494,cf:.4545,l:1.126},
+    {a:"pisang, susu",c:"nasi",s:.0627,cf:.6933,l:.830},
+    {a:"roti, ayam",c:"nasi",s:.0506,cf:.7368,l:.881},
+    {a:"nasi, susu",c:"roti",s:.1289,cf:.6446,l:3.040},
+    {a:"jeruk, nasi",c:"tempe",s:.0867,cf:.3363,l:1.298},
+  ],
+  rules_filtered: [
+    {a:"abon",c:"roti",s:.0518,cf:.7288,l:3.437},
+    {a:"roti, ayam",c:"telur",s:.0506,cf:.7368,l:1.826},
+    {a:"ayam, susu",c:"telur",s:.0506,cf:.7000,l:1.734},
+    {a:"pisang, susu",c:"telur",s:.0627,cf:.6933,l:1.718},
+    {a:"jeruk, susu",c:"telur",s:.0530,cf:.6875,l:1.703},
+  ]
+};
+
+/* ── CHART SETUP ─────────────────────────────────────────── */
+const COLORS = ['#6c63ff','#00d4ff','#ff6b9d','#ffd93d','#22c55e','#f97316','#a78bfa','#34d399','#fb7185','#60a5fa','#fbbf24','#4ade80','#f472b6','#38bdf8','#c084fc'];
+Chart.defaults.color='#94a3b8'; Chart.defaults.font.family="'Inter', sans-serif"; Chart.defaults.borderColor='rgba(255,255,255,0.06)';
+
+function mkBarChart(id, labels, data) {
+  return new Chart(document.getElementById(id).getContext('2d'), {
+    type:'bar',
+    data:{labels,datasets:[{label:'Frekuensi',data,backgroundColor:COLORS.map(c=>c+'cc'),borderColor:COLORS,borderWidth:1.5,borderRadius:6,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.raw} transaksi`}}},scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:'rgba(255,255,255,0.04)'}}}}
+  });
+}
+
+/* Item frequency */
+const sortedFreq = Object.entries(DATA.item_frequency).sort((a,b)=>b[1]-a[1]).slice(0,15);
+mkBarChart('chartItems', sortedFreq.map(([k])=>k.charAt(0).toUpperCase()+k.slice(1)), sortedFreq.map(([,v])=>v));
+
+/* Format donut */
+new Chart(document.getElementById('chartFormats').getContext('2d'),{type:'doughnut',data:{labels:Object.keys(DATA.format_dist),datasets:[{data:Object.values(DATA.format_dist),backgroundColor:['#6c63ff','#00d4ff','#ff6b9d'],borderWidth:2,borderColor:'#161921',hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'bottom',labels:{padding:14,font:{size:12}}}}}});
+
+/* Dist bar */
+const dEntries = Object.entries(DATA.item_dist).sort((a,b)=>+a[0]-+b[0]);
+mkBarChart('chartDist', dEntries.map(([k])=>`${k} item`), dEntries.map(([,v])=>v));
+
+/* Scatter */
+const pts = DATA.rules.map(r=>({x:r.s,y:r.cf,r:Math.max(4,r.l*3),label:`${r.a} → ${r.c}`,lift:r.l}));
+new Chart(document.getElementById('chartScatter').getContext('2d'),{type:'bubble',data:{datasets:[{label:'Rules',data:pts,backgroundColor:pts.map(p=>p.lift>2?'#ff6b9d88':p.lift>1.5?'#f9731688':'#6c63ff66'),borderColor:pts.map(p=>p.lift>2?'#ff6b9d':p.lift>1.5?'#f97316':'#6c63ff'),borderWidth:1.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>[c.raw.label,`Support: ${(c.raw.x*100).toFixed(1)}%`,`Confidence: ${(c.raw.y*100).toFixed(1)}%`,`Lift: ${c.raw.lift.toFixed(2)}`]}}},scales:{x:{title:{display:true,text:'Support'},min:0,grid:{color:'rgba(255,255,255,0.04)'}},y:{title:{display:true,text:'Confidence'},min:0.3,max:1.05,grid:{color:'rgba(255,255,255,0.04)'}}}}});
+
+/* ── RULES TABLE ─────────────────────────────────────────── */
+let allRules = [...DATA.rules];
+function renderTable(rules) {
+  const tbody = document.getElementById('rtbody');
+  tbody.innerHTML = rules.map((r,i)=>{
+    const ants = r.a.split(', ').map(x=>`<span class="itag">${x}</span>`).join('');
+    const cons = r.c.split(', ').map(x=>`<span class="itag cons">${x}</span>`).join('');
+    let [str,cls] = r.l>=2?['🔥 Sangat Kuat','shigh']:r.l>=1.5?['⚡ Kuat','smid']:['📌 Normal','slow'];
+    return `<tr><td class="rule-num">#${i+1}</td><td>${ants}</td><td>${cons}</td>
+      <td><span class="mval s">${(r.s*100).toFixed(1)}%</span></td>
+      <td><span class="mval c">${(r.cf*100).toFixed(1)}%</span></td>
+      <td><span class="mval l">${r.l.toFixed(3)}</span></td>
+      <td><span class="sbadge ${cls}">${str}</span></td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="tbl-empty">Tidak ada rules yang sesuai filter.</td></tr>`;
+}
+renderTable(allRules.slice(0,20));
+
+function applyF() {
+  const ml=+document.getElementById('flift').value, mc=+document.getElementById('fconf').value, lim=+document.getElementById('flimit').value;
+  document.getElementById('vlift').textContent=ml.toFixed(1);
+  document.getElementById('vconf').textContent=(mc*100).toFixed(0)+'%';
+  renderTable(allRules.filter(r=>r.l>=ml&&r.cf>=mc).slice(0,lim));
+}
+function resetF(){
+  document.getElementById('flift').value=0; document.getElementById('fconf').value=0; document.getElementById('flimit').value=20;
+  document.getElementById('vlift').textContent='0.0'; document.getElementById('vconf').textContent='0%';
+  renderTable(allRules.slice(0,20));
+}
+document.getElementById('flift').addEventListener('input',e=>{ document.getElementById('vlift').textContent=(+e.target.value).toFixed(1); applyF(); });
+document.getElementById('fconf').addEventListener('input',e=>{ document.getElementById('vconf').textContent=(+e.target.value*100).toFixed(0)+'%'; applyF(); });
+
+/* ── ITEMSETS GRID ───────────────────────────────────────── */
+const maxS = DATA.frequent_itemsets[0].s;
+document.getElementById('igrid').innerHTML = DATA.frequent_itemsets.slice(0,40).map(is=>{
+  const items = is.i.split(', ').map(x=>`<span class="ii">${x}</span>`).join(' + ');
+  const pct = (is.s/maxS*100).toFixed(0);
+  return `<div class="icard"><div class="icard-items">${items}</div><div class="icard-footer"><div class="sbar-wrap"><div class="sbar-track"><div class="sbar-fill" style="width:${pct}%"></div></div></div><span class="snum">${(is.s*100).toFixed(1)}%</span><span class="lbadge">${is.l}-item</span></div></div>`;
+}).join('');
+
+/* ── D3 NETWORK GRAPH ────────────────────────────────────── */
+(function(){
+  const container = document.getElementById('network-graph');
+  const W=container.clientWidth||800, H=460;
+  const rules30 = DATA.rules.slice(0,28);
+  const freq = DATA.item_frequency;
+  const nodeSet=new Set(); const links=[];
+  rules30.forEach(r=>{
+    const ants=r.a.split(', '), cons=r.c.split(', ');
+    ants.forEach(a=>nodeSet.add(a)); cons.forEach(c=>nodeSet.add(c));
+    ants.forEach(a=>cons.forEach(c=>links.push({source:a,target:c,lift:r.l,conf:r.cf})));
+  });
+  const nodes=[...nodeSet].map(id=>({id,freq:freq[id]||1}));
+  const maxF=Math.max(...nodes.map(n=>n.freq));
+  const svg=d3.select('#network-graph').append('svg').attr('width',W).attr('height',H);
+  svg.append('defs').selectAll('marker').data(['h','m','l']).enter().append('marker')
+    .attr('id',d=>`arr-${d}`).attr('viewBox','0 -5 10 10').attr('refX',22).attr('refY',0)
+    .attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto')
+    .append('path').attr('d','M0,-5L10,0L0,5')
+    .attr('fill',d=>d==='h'?'#ff6b9d':d==='m'?'#f97316':'#475569');
+  const sim=d3.forceSimulation(nodes)
+    .force('link',d3.forceLink(links).id(d=>d.id).distance(110))
+    .force('charge',d3.forceManyBody().strength(-200))
+    .force('center',d3.forceCenter(W/2,H/2))
+    .force('collision',d3.forceCollide().radius(d=>nr(d.freq,maxF)+8));
+  const link=svg.append('g').selectAll('line').data(links).enter().append('line')
+    .attr('stroke',d=>d.lift>2?'#ff6b9d':d.lift>1.5?'#f97316':'#475569')
+    .attr('stroke-opacity',.65).attr('stroke-width',d=>Math.min(4,d.lift))
+    .attr('marker-end',d=>`url(#arr-${d.lift>2?'h':d.lift>1.5?'m':'l'})`);
+  const node=svg.append('g').selectAll('g').data(nodes).enter().append('g')
+    .call(d3.drag().on('start',(e,d)=>{if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y}).on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y}).on('end',(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null}));
+  node.append('circle').attr('r',d=>nr(d.freq,maxF)).attr('fill',(_,i)=>COLORS[i%COLORS.length]+'cc').attr('stroke',(_,i)=>COLORS[i%COLORS.length]).attr('stroke-width',2).append('title').text(d=>`${d.id} (${d.freq} transaksi)`);
+  node.append('text').attr('text-anchor','middle').attr('dy','.35em').attr('fill','white').attr('font-size',d=>nr(d.freq,maxF)>18?12:10).attr('font-weight','600').attr('pointer-events','none').text(d=>d.id.charAt(0).toUpperCase()+d.id.slice(1));
+  sim.on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);node.attr('transform',d=>`translate(${Math.max(30,Math.min(W-30,d.x))},${Math.max(30,Math.min(H-30,d.y))})`)});
+  function nr(f,mf){return 12+(f/mf)*22}
+})();
+
+/* ── TOP RULES ───────────────────────────────────────────── */
+const clrs=['#6c63ff','#00d4ff','#ff6b9d','#ffd93d','#22c55e'];
+document.getElementById('topgrid').innerHTML = DATA.rules_filtered.map((r,i)=>{
+  const ants=r.a.split(', ').map(x=>`<span class="itag">${x}</span>`).join('');
+  const cons=r.c.split(', ').map(x=>`<span class="itag cons">${x}</span>`).join('');
+  const col=clrs[i%clrs.length];
+  return `<div class="top-card"><span class="top-num">#${i+1}</span>
+    <div class="top-lbl">Jika ada</div>
+    <div class="top-ant">${ants}</div>
+    <div class="top-arrow">↓</div>
+    <div class="top-lbl">Maka ada</div>
+    <div class="top-cons">${cons}</div>
+    <div class="top-metrics">
+      <div class="met-item"><div class="met-val" style="color:#22c55e">${(r.s*100).toFixed(1)}%</div><div class="met-lbl">Support</div></div>
+      <div class="met-item"><div class="met-val" style="color:#ffd93d">${(r.cf*100).toFixed(1)}%</div><div class="met-lbl">Confidence</div></div>
+      <div class="met-item"><div class="met-val" style="color:${col}">${r.l.toFixed(2)}x</div><div class="met-lbl">Lift</div></div>
+    </div></div>`;
+}).join('');
+</script>
+</body>
+</html>
