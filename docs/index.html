@@ -606,7 +606,7 @@ function downloadExcel() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Menyiapkan...'; }
 
   try {
-    const WB = XLSXStyle.utils.book_new();
+    const WB = XLSX.utils.book_new();
     const now = new Date().toLocaleString('id-ID');
 
     // ── Palet warna ───────────────────────────────────────────────
@@ -658,13 +658,13 @@ function downloadExcel() {
 
     // ── Helper: build worksheet dengan style + freeze + autowidth ──
     function makeSheet(aoaRows, hdrSty, altSty) {
-      const ws = XLSXStyle.utils.aoa_to_sheet(aoaRows);
+      const ws = XLSX.utils.aoa_to_sheet(aoaRows);
       const nCols = aoaRows[0].length;
       const nRows = aoaRows.length;
 
       // Style header row (row 0)
       for (let c = 0; c < nCols; c++) {
-        const addr = XLSXStyle.utils.encode_cell({r:0, c});
+        const addr = XLSX.utils.encode_cell({r:0, c});
         if (!ws[addr]) ws[addr] = { v: aoaRows[0][c], t:'s' };
         ws[addr].s = hdrSty;
       }
@@ -673,7 +673,7 @@ function downloadExcel() {
       for (let r = 1; r < nRows; r++) {
         const sty = (r % 2 === 0) ? altSty : STY.rowNorm;
         for (let c = 0; c < nCols; c++) {
-          const addr = XLSXStyle.utils.encode_cell({r, c});
+          const addr = XLSX.utils.encode_cell({r, c});
           if (!ws[addr]) ws[addr] = { v: aoaRows[r][c] ?? '', t:'s' };
           ws[addr].s = sty;
         }
@@ -719,7 +719,7 @@ function downloadExcel() {
       ['Top Rule — Lift',        topRule.l.toFixed(3)],
     ];
     const wsSUM = makeSheet(sumRows, STY.hdrPurple, STY.rowAltBlue);
-    XLSXStyle.utils.book_append_sheet(WB, wsSUM, 'Ringkasan');
+    XLSX.utils.book_append_sheet(WB, wsSUM, 'Ringkasan');
 
     // ════════════════════════════════════════════════════════════════
     // SHEET 2 — Association Rules (semua)
@@ -735,11 +735,11 @@ function downloadExcel() {
       if (r.l < 2) return;
       const rowIdx = i + 1;
       rulesAoa[0].forEach((_, ci) => {
-        const addr = XLSXStyle.utils.encode_cell({r:rowIdx, c:ci});
+        const addr = XLSX.utils.encode_cell({r:rowIdx, c:ci});
         if (wsRULES[addr]) wsRULES[addr].s = STY.rowAltYel;
       });
     });
-    XLSXStyle.utils.book_append_sheet(WB, wsRULES, 'Association Rules');
+    XLSX.utils.book_append_sheet(WB, wsRULES, 'Association Rules');
 
     // ════════════════════════════════════════════════════════════════
     // SHEET 3 — Rules Terbaik (header BIRU)
@@ -758,7 +758,7 @@ function downloadExcel() {
       topAoa.push([i+1, r.a, r.c, `${(r.s*100).toFixed(2)}%`, `${(r.cf*100).toFixed(2)}%`, +r.l.toFixed(4), interp]);
     });
     const wsTOP = makeSheet(topAoa, STY.hdrBlue, STY.rowAltYel);
-    XLSXStyle.utils.book_append_sheet(WB, wsTOP, 'Rules Terbaik');
+    XLSX.utils.book_append_sheet(WB, wsTOP, 'Rules Terbaik');
 
     // ════════════════════════════════════════════════════════════════
     // SHEET 4 — Frequent Itemsets (header HIJAU)
@@ -768,7 +768,7 @@ function downloadExcel() {
       fiAoa.push([i+1, is.i, `${(is.s*100).toFixed(2)}%`, +is.s.toFixed(4), is.l]);
     });
     const wsFI = makeSheet(fiAoa, STY.hdrGreen, STY.rowAltBlue);
-    XLSXStyle.utils.book_append_sheet(WB, wsFI, 'Frequent Itemsets');
+    XLSX.utils.book_append_sheet(WB, wsFI, 'Frequent Itemsets');
 
     // ════════════════════════════════════════════════════════════════
     // SHEET 5 — Frekuensi Item (header UNGU)
@@ -780,7 +780,7 @@ function downloadExcel() {
         freqAoa.push([`#${i+1}`, item.charAt(0).toUpperCase()+item.slice(1), freq, `${(freq/830*100).toFixed(1)}%`]);
       });
     const wsFREQ = makeSheet(freqAoa, STY.hdrPurple, STY.rowAltBlue);
-    XLSXStyle.utils.book_append_sheet(WB, wsFREQ, 'Frekuensi Item');
+    XLSX.utils.book_append_sheet(WB, wsFREQ, 'Frekuensi Item');
 
     // ════════════════════════════════════════════════════════════════
     // SHEET 6 — Distribusi Transaksi (header UNGU)
@@ -793,11 +793,11 @@ function downloadExcel() {
         distAoa.push([+k, v, `${(v/totalTx2*100).toFixed(1)}%`]);
       });
     const wsDIST = makeSheet(distAoa, STY.hdrPurple, STY.rowAltBlue);
-    XLSXStyle.utils.book_append_sheet(WB, wsDIST, 'Distribusi Transaksi');
+    XLSX.utils.book_append_sheet(WB, wsDIST, 'Distribusi Transaksi');
 
     // ── Trigger download ──────────────────────────────────────────
     const ts = new Date().toISOString().slice(0,19).replace('T','_').replace(/:/g,'-');
-    XLSXStyle.writeFile(WB, `MBG_Analytics_Hasil_${ts}.xlsx`);
+    XLSX.writeFile(WB, `MBG_Analytics_Hasil_${ts}.xlsx`);
 
   } catch(e) {
     alert('Gagal membuat Excel: ' + e.message + '\n\nStack: ' + e.stack);
