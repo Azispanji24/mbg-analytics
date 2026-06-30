@@ -161,11 +161,15 @@
 
     /* ── HERO BUTTONS ────────────────────────────────────────── */
     .hero-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:32px;animation:fadeDown .6s .3s ease both}
-    .hbtn{display:inline-flex;align-items:center;gap:8px;padding:13px 26px;border-radius:var(--radius-md);font-size:15px;font-weight:700;text-decoration:none;transition:all .25s;white-space:nowrap;font-family:'Inter',sans-serif}
+    .hbtn{display:inline-flex;align-items:center;gap:8px;padding:13px 26px;border-radius:var(--radius-md);font-size:15px;font-weight:700;text-decoration:none;transition:all .25s;white-space:nowrap;font-family:'Inter',sans-serif;cursor:pointer;border:none}
     .hbtn-primary{background:linear-gradient(135deg,var(--accent-1),var(--accent-2));color:#fff;box-shadow:0 4px 24px rgba(108,99,255,.4)}
     .hbtn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(108,99,255,.6)}
-    .hbtn-drive{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--text-primary);backdrop-filter:blur(8px)}
-    .hbtn-drive:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.25);transform:translateY(-2px);color:#fff}
+    .hbtn-drive{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12)!important;color:var(--text-primary);backdrop-filter:blur(8px)}
+    .hbtn-drive:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.25)!important;transform:translateY(-2px);color:#fff}
+    .hbtn-excel{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.35)!important;color:#4ade80}
+    .hbtn-excel:hover{background:rgba(34,197,94,.2);border-color:rgba(34,197,94,.6)!important;transform:translateY(-2px);box-shadow:0 4px 20px rgba(34,197,94,.25);color:#86efac}
+    .hbtn-excel:disabled{opacity:.6;cursor:not-allowed;transform:none!important;box-shadow:none!important}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
     /* ── RESPONSIVE ─────────────────────────────────────────── */
     @media(max-width:900px){.navbar{padding:18px 20px}.nav-links{display:none}.container{padding:0 20px}.charts-grid{grid-template-columns:1fr}.stats-strip{padding:20px}.hero-title{font-size:36px}.group-card{flex-direction:column;text-align:center}.hero-btns{flex-direction:column;align-items:center}}
@@ -213,6 +217,11 @@
         <span>☁️</span> Lihat Dataset di Google Drive
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:4px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
       </a>
+      <button id="btn-dl" class="hbtn hbtn-excel" onclick="downloadExcel()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download Hasil Analisis
+        <span style="font-size:11px;font-weight:400;opacity:.8">(.xlsx Excel)</span>
+      </button>
     </div>
   </div>
 
@@ -367,6 +376,9 @@
     </div>
   </div>
 </footer>
+
+<!-- ─── SHEETJS (client-side Excel) ────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <!-- ─── DATA & SCRIPTS ──────────────────────────────────────────────── -->
 <script>
@@ -587,6 +599,158 @@ document.getElementById('topgrid').innerHTML = DATA.rules_filtered.map((r,i)=>{
       <div class="met-item"><div class="met-val" style="color:${col}">${r.l.toFixed(2)}x</div><div class="met-lbl">Lift</div></div>
     </div></div>`;
 }).join('');
+
+/* ── DOWNLOAD EXCEL (SheetJS, client-side) ──────────────────── */
+function downloadExcel() {
+  const btn = document.getElementById('btn-dl');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Menyiapkan...'; }
+
+  try {
+    const WB = XLSX.utils.book_new();
+    const now = new Date().toLocaleString('id-ID');
+
+    // ── Helper style ──────────────────────────────────────────────
+    const HDR  = { font:{bold:true,color:{rgb:'F8FAFC'},sz:11}, fill:{fgColor:{rgb:'1E1B4B'}}, alignment:{horizontal:'center',vertical:'center'}, border:{top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}} };
+    const HDR2 = { font:{bold:true,color:{rgb:'F8FAFC'},sz:11}, fill:{fgColor:{rgb:'0EA5E9'}}, alignment:{horizontal:'center',vertical:'center'}, border:{top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}} };
+    const HDR3 = { font:{bold:true,color:{rgb:'F8FAFC'},sz:11}, fill:{fgColor:{rgb:'166534'}}, alignment:{horizontal:'center',vertical:'center'}, border:{top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}} };
+    const ALT  = { fill:{fgColor:{rgb:'F1F5FF'}}, border:{top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}} };
+    const NRM  = { border:{top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}} };
+    const YEL  = { fill:{fgColor:{rgb:'FEF9C3'}}, border:{top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}} };
+
+    function styleRow(ws, rowIdx, cols, style) {
+      cols.forEach((_, ci) => {
+        const addr = XLSX.utils.encode_cell({r: rowIdx, c: ci});
+        if (ws[addr]) ws[addr].s = style;
+      });
+    }
+
+    function addSheet(name, aoaRows, headerStyle, altStyle) {
+      const ws = XLSX.utils.aoa_to_sheet(aoaRows);
+      // Style header row
+      aoaRows[0].forEach((_, ci) => {
+        const addr = XLSX.utils.encode_cell({r:0, c:ci});
+        ws[addr] = ws[addr] || { v: aoaRows[0][ci], t:'s' };
+        ws[addr].s = headerStyle;
+      });
+      // Style data rows
+      for (let r = 1; r < aoaRows.length; r++) {
+        aoaRows[r].forEach((_, ci) => {
+          const addr = XLSX.utils.encode_cell({r, c:ci});
+          ws[addr] = ws[addr] || { v: aoaRows[r][ci], t:'s' };
+          ws[addr].s = r % 2 === 0 ? (altStyle || ALT) : NRM;
+        });
+      }
+      // Auto col width
+      const colW = aoaRows[0].map((_, ci) => ({
+        wch: Math.min(50, Math.max(10, ...aoaRows.map(r => String(r[ci]||'').length)) + 3)
+      }));
+      ws['!cols'] = colW;
+      XLSX.utils.book_append_sheet(WB, ws, name);
+    }
+
+    // ── Sheet 1: Ringkasan ──────────────────────────────────────
+    const topRule = DATA.rules[0];
+    const sumRows = [
+      ['MBG ANALYTICS — RINGKASAN HASIL ANALISIS'],
+      ['Kelompok 6 — Tugas Machine Learning'],
+      [''],
+      ['INFORMASI UMUM', ''],
+      ['Tanggal Analisis', now],
+      ['Sumber Data', 'PRESET (Hasil Analisis Notebook)'],
+      ['Link Google Drive', 'https://drive.google.com/drive/folders/1qXPs8jT-7lLpJqIN2m3bUVE-TKDUVCTv'],
+      [''],
+      ['DATASET', ''],
+      ['Total Gambar', 846],
+      ['Transaksi Valid', 830],
+      ['Item Unik', Object.keys(DATA.item_frequency).length],
+      ['Format PNG', DATA.format_dist['PNG']||0],
+      ['Format JPG', DATA.format_dist['JPG']||0],
+      ['Format JPEG', DATA.format_dist['JPEG']||0],
+      [''],
+      ['HASIL FP-GROWTH (min_support = 5%)', ''],
+      ['Frequent Itemsets', DATA.frequent_itemsets.length],
+      [''],
+      ['ASSOCIATION RULES (min_confidence = 60%)', ''],
+      ['Total Rules', DATA.rules.length],
+      ['Rules Signifikan', DATA.rules_filtered.length],
+      ['Kriteria', 'lift > 1.5 AND confidence > 65%'],
+      [''],
+      ['TOP RULE TERBAIK', ''],
+      ['Antecedents → Consequents', `${topRule.a} → ${topRule.c}`],
+      ['Support',    `${(topRule.s*100).toFixed(1)}%`],
+      ['Confidence', `${(topRule.cf*100).toFixed(1)}%`],
+      ['Lift',       topRule.l.toFixed(3)],
+    ];
+    const wsSUM = XLSX.utils.aoa_to_sheet(sumRows);
+    wsSUM['!cols'] = [{wch:38},{wch:58}];
+    wsSUM['!merges'] = [{s:{r:0,c:0},e:{r:0,c:1}},{s:{r:1,c:0},e:{r:1,c:1}}];
+    if(wsSUM['A1']) wsSUM['A1'].s = {font:{bold:true,sz:14,color:{rgb:'F8FAFC'}},fill:{fgColor:{rgb:'1E1B4B'}},alignment:{horizontal:'center'}};
+    if(wsSUM['A2']) wsSUM['A2'].s = {font:{sz:10,color:{rgb:'94A3B8'}},fill:{fgColor:{rgb:'1A1D2E'}},alignment:{horizontal:'center'}};
+    XLSX.utils.book_append_sheet(WB, wsSUM, '📊 Ringkasan');
+
+    // ── Sheet 2: Association Rules ──────────────────────────────
+    const rulesRows = [
+      ['#','Antecedents (Jika ada...)','Consequents (...maka ada)','Support','Confidence','Lift','Leverage','Kekuatan']
+    ];
+    DATA.rules.forEach((r,i) => {
+      const str = r.l>=2 ? '🔥 Sangat Kuat' : r.l>=1.5 ? '⚡ Kuat' : '📌 Normal';
+      rulesRows.push([i+1, r.a, r.c, `${(r.s*100).toFixed(2)}%`, `${(r.cf*100).toFixed(2)}%`, r.l, r.lv||0, str]);
+    });
+    addSheet('🔗 Association Rules', rulesRows, HDR, ALT);
+
+    // ── Sheet 3: Rules Terbaik ──────────────────────────────────
+    const topRows = [
+      ['#','Antecedents (Jika ada...)','Consequents (...maka ada)','Support','Confidence','Lift','Interpretasi']
+    ];
+    const interpMap = {
+      'abon → roti':           'Jika ada abon, kemungkinan 72.9% ada roti (3.4x lebih sering)',
+      'roti, ayam → telur':    'Paket roti+ayam hampir selalu disertai telur (73.7%)',
+      'ayam, susu → telur':    'Kombinasi ayam+susu erat dengan telur (70.0%)',
+      'pisang, susu → telur':  'Pisang+susu sering muncul bersama telur (69.3%)',
+      'jeruk, susu → telur':   'Jeruk+susu berkorelasi kuat dengan telur (68.8%)',
+    };
+    DATA.rules_filtered.forEach((r,i) => {
+      const key = `${r.a} → ${r.c}`;
+      const interp = interpMap[key] || `Lift ${r.l.toFixed(2)}x di atas baseline`;
+      topRows.push([i+1, r.a, r.c, `${(r.s*100).toFixed(2)}%`, `${(r.cf*100).toFixed(2)}%`, r.l, interp]);
+    });
+    addSheet('⭐ Rules Terbaik', topRows, HDR2, YEL);
+
+    // ── Sheet 4: Frequent Itemsets ──────────────────────────────
+    const fiRows = [['#','Itemset','Support (%)','Support (raw)','Jumlah Item']];
+    DATA.frequent_itemsets.forEach((is,i) => {
+      fiRows.push([i+1, is.i, `${(is.s*100).toFixed(2)}%`, is.s, is.l]);
+    });
+    addSheet('📦 Frequent Itemsets', fiRows, HDR3, ALT);
+
+    // ── Sheet 5: Frekuensi Item ─────────────────────────────────
+    const freqRows = [['#','Item','Frekuensi','Persentase (%)','Peringkat']];
+    Object.entries(DATA.item_frequency).sort((a,b)=>b[1]-a[1]).forEach(([item,freq],i) => {
+      freqRows.push([i+1, item.charAt(0).toUpperCase()+item.slice(1), freq, `${(freq/830*100).toFixed(1)}%`, `#${i+1}`]);
+    });
+    addSheet('🥗 Frekuensi Item', freqRows, HDR, ALT);
+
+    // ── Sheet 6: Distribusi Transaksi ───────────────────────────
+    const distRows = [['Jumlah Item','Jumlah Transaksi','Persentase (%)']];
+    const totalTx = Object.values(DATA.item_dist).reduce((a,b)=>a+b,0);
+    Object.entries(DATA.item_dist).sort((a,b)=>+a[0]-+b[0]).forEach(([k,v]) => {
+      distRows.push([+k, v, `${(v/totalTx*100).toFixed(1)}%`]);
+    });
+    addSheet('📈 Distribusi Transaksi', distRows, HDR, ALT);
+
+    // ── Download ─────────────────────────────────────────────────
+    const ts = new Date().toISOString().slice(0,19).replace('T','_').replace(/:/g,'-');
+    XLSX.writeFile(WB, `MBG_Analytics_Hasil_${ts}.xlsx`);
+
+  } catch(e) {
+    alert('❌ Gagal membuat Excel: ' + e.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download Hasil Analisis <span style="font-size:11px;font-weight:400;opacity:.8">(.xlsx Excel)</span>';
+    }
+  }
+}
 </script>
 </body>
 </html>
