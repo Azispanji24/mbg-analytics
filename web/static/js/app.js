@@ -112,13 +112,66 @@ function showProgress() {
   document.getElementById('progress-container').style.display = 'block';
 }
 function showDone() {
-  const btnP = document.getElementById('btn-preset');
-  const btnD = document.getElementById('btn-drive');
-  const btnR = document.getElementById('btn-reset');
-  if (btnP) btnP.style.display = 'none';
-  if (btnD) btnD.style.display = 'none';
-  if (btnR) btnR.style.display = 'flex';
-  updateProgressUI({ stage:'done', progress:100, message:'Analisis selesai!' });
+  const btnP    = document.getElementById('btn-preset');
+  const btnD    = document.getElementById('btn-drive');
+  const btnR    = document.getElementById('btn-reset');
+  const btnDL   = document.getElementById('btn-download');
+  if (btnP)  btnP.style.display  = 'none';
+  if (btnD)  btnD.style.display  = 'none';
+  if (btnR)  btnR.style.display  = 'flex';
+  if (btnDL) btnDL.style.display = 'inline-flex'; // tampilkan tombol download
+  updateProgressUI({ stage:'done', progress:100, message:'Analisis selesai! ✅' });
+}
+
+// ─── Download Hasil Analisis ──────────────────────────────────────
+async function downloadResults() {
+  const btnDL = document.getElementById('btn-download');
+  if (btnDL) {
+    btnDL.disabled = true;
+    btnDL.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+      </svg>
+      Menyiapkan...
+    `;
+  }
+
+  try {
+    const res = await fetch('/api/download');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ msg: 'Gagal mengunduh' }));
+      alert('❌ ' + (err.msg || 'Gagal mengunduh hasil analisis.'));
+      return;
+    }
+    // Trigger browser download
+    const blob        = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match       = disposition.match(/filename="?([^"]+)"?/);
+    const filename    = match ? match[1] : 'MBG_Analytics_Hasil.zip';
+    const url         = URL.createObjectURL(blob);
+    const a           = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('❌ Terjadi kesalahan: ' + e.message);
+  } finally {
+    if (btnDL) {
+      btnDL.disabled = false;
+      btnDL.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download Hasil Analisis
+        <span class="btn-sub">(.xlsx Excel)</span>
+      `;
+    }
+  }
 }
 
 // ─── Load & Render Everything ─────────────────────────────────────────
@@ -130,6 +183,21 @@ async function loadAndRender() {
 
   allRules    = d.rules    || [];
   allItemsets = d.frequent_itemsets || [];
+
+  // Update hero subtitle dengan jumlah gambar aktual
+  const imgTxt = document.getElementById('img-count-txt');
+  if (imgTxt) imgTxt.textContent = `${(d.meta.total_images||0).toLocaleString('id-ID')} foto menu`;
+
+  // Tampilkan info last_updated & sumber data
+  const updBar = document.getElementById('last-updated-bar');
+  if (updBar && d.meta.last_updated) {
+    const src = d.meta.source === 'drive' ? 'Google Drive' : 'Data Preset';
+    const newImg = d.meta.new_images_this_run > 0
+      ? ` &nbsp;|&nbsp; <span style="color:#22c55e;font-weight:700">+${d.meta.new_images_this_run} gambar baru</span>`
+      : '';
+    updBar.innerHTML = `Terakhir diperbarui: ${d.meta.last_updated} &nbsp;|&nbsp; Sumber: ${src}${newImg}`;
+    updBar.style.display = 'block';
+  }
 
   // Stats strip
   animateVal('val-images', d.meta.total_images);

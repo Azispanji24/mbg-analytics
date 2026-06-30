@@ -265,61 +265,125 @@ def run_preset():
         })
         print("[ERROR]", traceback.format_exc())
 
-# ─── Pipeline: Mode DRIVE (download + OCR + mining) ────────────────────────────
+# ─── Pipeline: Mode DRIVE (download incremental + OCR cache + mining) ──────────
 def run_drive_pipeline():
-    """Download gambar dari Drive, jalankan OCR + FP-Growth. Proses panjang."""
+    """Sinkronisasi dengan Drive (hanya gambar baru), OCR dengan cache, lalu FP-Growth."""
     global processing_status, results_cache
     try:
-        # Tahap 1: Download
-        processing_status.update({
-            "stage": "downloading", "progress": 5,
-            "message": "Mengunduh dataset dari Google Drive (proses lama)...", "error": None
-        })
-        os.makedirs(DATASET_DIR, exist_ok=True)
+        import time
         img_exts = (".jpg", ".jpeg", ".png")
-        existing = [f for f in os.listdir(DATASET_DIR) if f.lower().endswith(img_exts)]
+        os.makedirs(DATASET_DIR, exist_ok=True)
 
-        if len(existing) < 10:
+        # ── Tahap 1: Sinkronisasi dengan Google Drive ────────────────────────
+        processing_status.update({
+            "stage": "downloading", "progress": 3,
+            "message": "Menghubungi Google Drive...", "error": None
+        })
+
+        # Hitung file lokal saat ini
+        existing_local = set(
+            f for f in os.listdir(DATASET_DIR) if f.lower().endswith(img_exts)
+        )
+        n_existing = len(existing_local)
+        processing_status.update({
+            "progress": 8,
+            "message": f"{n_existing} gambar lokal ditemukan. Menyinkronkan..."
+        })
+
+        # gdown download folder — otomatis skip file yang sudah ada
+        try:
             import gdown
             gdown.download_folder(
                 f"https://drive.google.com/drive/folders/{FOLDER_ID}",
-                output=DATASET_DIR, quiet=False, use_cookies=False
+                output=DATASET_DIR,
+                quiet=True,
+                use_cookies=False,
             )
-        else:
-            processing_status["message"] = f"Dataset sudah ada ({len(existing)} gambar) - skip download"
+        except Exception as dl_err:
+            print(f"[WARN] gdown: {dl_err} — lanjut dengan file lokal")
 
-        image_files = [f for f in os.listdir(DATASET_DIR) if f.lower().endswith(img_exts)]
+        # Scan semua gambar (rekursif jika ada subfolder dari gdown)
+        image_files = []
+        for root, _, files in os.walk(DATASET_DIR):
+            for fname in sorted(files):
+                if fname.lower().endswith(img_exts):
+                    rel = os.path.relpath(os.path.join(root, fname), DATASET_DIR)
+                    image_files.append(rel)
+
         total_images = len(image_files)
+        new_count = max(0, total_images - n_existing)
         processing_status.update({
-            "progress": 20, "total": total_images,
-            "message": f"{total_images} gambar siap di-OCR"
+            "progress": 18, "total": total_images,
+            "message": f"Sinkronisasi OK: {total_images} gambar total, {new_count} baru"
+        })
+        time.sleep(0.4)
+
+        # ── Tahap 2: OCR dengan cache per-file ──────────────────────────────
+        OCR_CACHE_FILE = os.path.join(BASE_DIR, "ocr_cache.json")
+        ocr_cache = {}
+        if os.path.exists(OCR_CACHE_FILE):
+            with open(OCR_CACHE_FILE, "r", encoding="utf-8") as fc:
+                ocr_cache = json.load(fc)
+
+        n_cached = sum(1 for f in image_files if f in ocr_cache)
+        n_todo = total_images - n_cached
+
+        processing_status.update({
+            "stage": "ocr", "progress": 20,
+            "message": f"OCR: {n_cached} dari cache, {n_todo} harus di-proses baru..."
         })
 
-        # Tahap 2: OCR
-        processing_status.update({"stage": "ocr", "progress": 22, "message": "Memuat model EasyOCR..."})
-        import easyocr
-        reader = easyocr.Reader(["id", "en"], gpu=False)
+        if n_todo > 0:
+            import easyocr
+            reader = easyocr.Reader(["id", "en"], gpu=False)
+        else:
+            reader = None
 
         ocr_results = {}
+        newly_ocr = 0
         for i, fname in enumerate(image_files):
             img_path = os.path.join(DATASET_DIR, fname)
-            try:
-                ocr_out = reader.readtext(img_path, detail=0)
-                ocr_results[fname] = [str(t) for t in ocr_out]
-            except Exception:
-                ocr_results[fname] = []
-            pct = 22 + int((i + 1) / total_images * 50)
+            if fname in ocr_cache:
+                ocr_results[fname] = ocr_cache[fname]
+                label = "[cache]"
+            else:
+                try:
+                    ocr_out = reader.readtext(img_path, detail=0)
+                    ocr_results[fname] = [str(t) for t in ocr_out]
+                except Exception:
+                    ocr_results[fname] = []
+                ocr_cache[fname] = ocr_results[fname]
+                newly_ocr += 1
+                label = "[baru]"
+                # Simpan cache checkpoint tiap 25 file baru
+                if newly_ocr % 25 == 0:
+                    with open(OCR_CACHE_FILE, "w", encoding="utf-8") as fc:
+                        json.dump(ocr_cache, fc, ensure_ascii=False)
+
+            pct = 20 + int((i + 1) / total_images * 52)
+            bname = os.path.basename(fname)
             processing_status.update({
                 "progress": pct, "current": i + 1,
-                "message": f"OCR: {i+1}/{total_images} - {fname[:40]}"
+                "message": f"OCR {i+1}/{total_images} {label} — {bname[:40]}"
             })
 
-        # Tahap 3: Transaksi
-        processing_status.update({"stage": "mining", "progress": 74, "message": "Membuat data transaksi..."})
-        transactions = {f: extract_items(w) for f, w in ocr_results.items() if extract_items(w)}
-        transaction_list = list(transactions.values())
+        # Simpan OCR cache final
+        with open(OCR_CACHE_FILE, "w", encoding="utf-8") as fc:
+            json.dump(ocr_cache, fc, ensure_ascii=False)
+        print(f"[INFO] OCR selesai: {newly_ocr} baru, {total_images - newly_ocr} cache")
 
-        # Tahap 4: Encoding + FP-Growth
+        # ── Tahap 3: Transaksi ───────────────────────────────────────────────
+        processing_status.update({
+            "stage": "mining", "progress": 74,
+            "message": "Membangun data transaksi..."
+        })
+        transaction_list = [
+            extract_items(w)
+            for w in ocr_results.values()
+            if extract_items(w)
+        ]
+
+        # ── Tahap 4: FP-Growth + Association Rules ───────────────────────────
         processing_status.update({"progress": 80, "message": "One-Hot Encoding..."})
         from mlxtend.preprocessing import TransactionEncoder
         from mlxtend.frequent_patterns import fpgrowth, association_rules
@@ -330,7 +394,7 @@ def run_drive_pipeline():
         te_arr = te.fit(transaction_list).transform(transaction_list)
         df = pd.DataFrame(te_arr, columns=te.columns_)
 
-        processing_status.update({"progress": 85, "message": "Menjalankan FP-Growth..."})
+        processing_status.update({"progress": 86, "message": "Menjalankan FP-Growth..."})
         freq_items = fpgrowth(df, min_support=0.05, use_colnames=True)
         freq_items["length"] = freq_items["itemsets"].apply(len)
         freq_items = freq_items.sort_values("support", ascending=False).reset_index(drop=True)
@@ -340,11 +404,17 @@ def run_drive_pipeline():
         rules = rules.sort_values("lift", ascending=False).reset_index(drop=True)
         rules_filtered = rules[(rules["lift"] > 1.5) & (rules["confidence"] > 0.65)].copy()
 
-        # Serialize
+        # ── Serialize ────────────────────────────────────────────────────────
         def s2str(s): return ", ".join(sorted(s))
         item_freq = Counter(item for t in transaction_list for item in t)
         item_dist = Counter(len(t) for t in transaction_list)
+        fmt_dist = {"png": 0, "jpg": 0, "jpeg": 0}
+        for f in image_files:
+            ext = os.path.basename(f).lower().rsplit(".", 1)[-1]
+            if ext in fmt_dist:
+                fmt_dist[ext] += 1
 
+        from datetime import datetime
         results_cache = {
             "meta": {
                 "total_images": total_images,
@@ -353,33 +423,33 @@ def run_drive_pipeline():
                 "total_rules": len(rules),
                 "total_rules_filtered": len(rules_filtered),
                 "unique_items": sorted(df.columns.tolist()),
-                "format_dist": {"png":0,"jpg":0,"jpeg":0},
-                "source": "drive"
+                "format_dist": fmt_dist,
+                "source": "drive",
+                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "new_images_this_run": new_count,
             },
             "item_frequency": dict(item_freq.most_common(30)),
-            "item_dist_per_transaction": {str(k):v for k,v in sorted(item_dist.items())},
+            "item_dist_per_transaction": {str(k): v for k, v in sorted(item_dist.items())},
             "frequent_itemsets": [
-                {"itemset":s2str(r["itemsets"]),"support":round(float(r["support"]),4),"length":int(r["length"])}
-                for _,r in freq_items.iterrows()
+                {"itemset": s2str(r["itemsets"]), "support": round(float(r["support"]), 4),
+                 "length": int(r["length"])}
+                for _, r in freq_items.iterrows()
             ],
             "rules": [
-                {"antecedents":s2str(r["antecedents"]),"consequents":s2str(r["consequents"]),
-                 "support":round(float(r["support"]),4),"confidence":round(float(r["confidence"]),4),
-                 "lift":round(float(r["lift"]),4),"leverage":round(float(r["leverage"]),4)}
-                for _,r in rules.iterrows()
+                {"antecedents": s2str(r["antecedents"]), "consequents": s2str(r["consequents"]),
+                 "support": round(float(r["support"]), 4), "confidence": round(float(r["confidence"]), 4),
+                 "lift": round(float(r["lift"]), 4), "leverage": round(float(r["leverage"]), 4)}
+                for _, r in rules.iterrows()
             ],
             "rules_filtered": [
-                {"antecedents":s2str(r["antecedents"]),"consequents":s2str(r["consequents"]),
-                 "support":round(float(r["support"]),4),"confidence":round(float(r["confidence"]),4),
-                 "lift":round(float(r["lift"]),4)}
-                for _,r in rules_filtered.iterrows()
+                {"antecedents": s2str(r["antecedents"]), "consequents": s2str(r["consequents"]),
+                 "support": round(float(r["support"]), 4), "confidence": round(float(r["confidence"]), 4),
+                 "lift": round(float(r["lift"]), 4)}
+                for _, r in rules_filtered.iterrows()
             ],
         }
-        for f in image_files:
-            ext = f.lower().split(".")[-1]
-            if ext in results_cache["meta"]["format_dist"]:
-                results_cache["meta"]["format_dist"][ext] += 1
 
+        processing_status.update({"progress": 98, "message": "Menyimpan hasil..."})
         with open(CACHE_FILE, "w", encoding="utf-8") as fout:
             json.dump(results_cache, fout, ensure_ascii=False, indent=2)
         print("[OK] Drive pipeline selesai.")
@@ -453,5 +523,369 @@ def api_rules():
     ][:limit]
     return jsonify({"ok": True, "rules": rules, "total": len(rules)})
 
+@app.route("/api/download")
+def api_download():
+    """Hasilkan file Excel (.xlsx) multi-sheet berisi semua hasil analisis."""
+    if not results_cache:
+        return jsonify({"ok": False, "msg": "Belum ada hasil analisis"}), 404
+
+    import io
+    from datetime import datetime
+    from openpyxl import Workbook
+    from openpyxl.styles import (
+        PatternFill, Font, Alignment, Border, Side, numbers
+    )
+    from openpyxl.utils import get_column_letter
+
+    meta = results_cache.get("meta", {})
+    ts   = meta.get("last_updated", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    wb = Workbook()
+    wb.remove(wb.active)  # hapus sheet default kosong
+
+    # ── Palette warna ────────────────────────────────────────────────────
+    CLR_HEADER_DARK  = "1E1B4B"   # ungu gelap   → header utama
+    CLR_HEADER_MID   = "312E81"   # ungu sedang  → sub-header
+    CLR_ACCENT_BLUE  = "0EA5E9"   # biru         → Rules Terbaik header
+    CLR_ACCENT_GREEN = "166534"   # hijau gelap  → Itemsets header
+    CLR_ROW_ALT      = "F1F5FF"   # biru pucat   → baris alternating
+    CLR_ROW_TOP      = "FEF9C3"   # kuning pucat → top rules highlight
+    CLR_WHITE        = "FFFFFF"
+    CLR_TEXT_LIGHT   = "F8FAFC"
+
+    thin_side  = Side(style="thin",   color="D1D5DB")
+    thick_side = Side(style="medium", color="6C63FF")
+
+    def header_font(color=CLR_TEXT_LIGHT, size=11, bold=True):
+        return Font(name="Calibri", bold=bold, color=color, size=size)
+
+    def body_font(bold=False, color="111827", size=10):
+        return Font(name="Calibri", bold=bold, color=color, size=size)
+
+    def make_header_fill(hex_color):
+        return PatternFill("solid", fgColor=hex_color)
+
+    def cell_border():
+        return Border(
+            left=Side(style="thin", color="D1D5DB"),
+            right=Side(style="thin", color="D1D5DB"),
+            top=Side(style="thin", color="D1D5DB"),
+            bottom=Side(style="thin", color="D1D5DB"),
+        )
+
+    def apply_header_row(ws, row_idx, headers, fill_color=CLR_HEADER_DARK):
+        fill = make_header_fill(fill_color)
+        fnt  = header_font()
+        for col_idx, h in enumerate(headers, 1):
+            c = ws.cell(row=row_idx, column=col_idx, value=h)
+            c.fill      = fill
+            c.font      = fnt
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            c.border    = cell_border()
+
+    def apply_data_row(ws, row_idx, values, alt=False, highlight_color=None):
+        fc = highlight_color or (CLR_ROW_ALT if alt else CLR_WHITE)
+        fill = PatternFill("solid", fgColor=fc)
+        fnt  = body_font()
+        for col_idx, v in enumerate(values, 1):
+            c = ws.cell(row=row_idx, column=col_idx, value=v)
+            c.fill      = fill
+            c.font      = fnt
+            c.alignment = Alignment(vertical="center", wrap_text=False)
+            c.border    = cell_border()
+
+    def auto_col_width(ws, min_w=10, max_w=50):
+        for col_cells in ws.columns:
+            length = max(
+                (len(str(cell.value)) if cell.value is not None else 0)
+                for cell in col_cells
+            )
+            col_letter = get_column_letter(col_cells[0].column)
+            ws.column_dimensions[col_letter].width = min(max_w, max(min_w, length + 4))
+
+    def add_title_cell(ws, title, subtitle=""):
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+        c = ws.cell(row=1, column=1, value=title)
+        c.font      = Font(name="Calibri", bold=True, size=14, color=CLR_TEXT_LIGHT)
+        c.fill      = make_header_fill(CLR_HEADER_DARK)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 26
+        if subtitle:
+            ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=8)
+            c2 = ws.cell(row=2, column=1, value=subtitle)
+            c2.font      = Font(name="Calibri", size=10, color="A0AEC0")
+            c2.fill      = make_header_fill("1A1D2E")
+            c2.alignment = Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[2].height = 18
+            return 3   # data mulai baris 3
+        return 2       # data mulai baris 2
+
+    # ════════════════════════════════════════════════════════════════════
+    # SHEET 1 — Ringkasan (Summary)
+    # ════════════════════════════════════════════════════════════════════
+    ws_sum = wb.create_sheet("📊 Ringkasan")
+
+    # Judul besar
+    ws_sum.merge_cells("A1:D1")
+    c = ws_sum["A1"]
+    c.value     = "MBG ANALYTICS — RINGKASAN HASIL ANALISIS"
+    c.font      = Font(name="Calibri", bold=True, size=14, color=CLR_TEXT_LIGHT)
+    c.fill      = make_header_fill(CLR_HEADER_DARK)
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws_sum.row_dimensions[1].height = 28
+
+    ws_sum.merge_cells("A2:D2")
+    c2 = ws_sum["A2"]
+    c2.value     = "Kelompok 6 — Tugas Machine Learning"
+    c2.font      = Font(name="Calibri", size=10, color="94A3B8")
+    c2.fill      = make_header_fill("1A1D2E")
+    c2.alignment = Alignment(horizontal="center", vertical="center")
+    ws_sum.row_dimensions[2].height = 18
+
+    # Label-Value
+    total_rules_all = len(results_cache.get("rules", []))
+    top_rule        = results_cache.get("rules", [{}])[0]
+    rows_info = [
+        ("", ""),
+        ("INFORMASI UMUM", ""),
+        ("Tanggal Analisis",   ts),
+        ("Sumber Data",        meta.get("source", "-").upper()),
+        ("Link Google Drive",  "https://drive.google.com/drive/folders/1qXPs8jT-7lLpJqIN2m3bUVE-TKDUVCTv"),
+        ("", ""),
+        ("DATASET", ""),
+        ("Total Gambar",       meta.get("total_images", 0)),
+        ("Transaksi Valid",    meta.get("total_transactions", 0)),
+        ("Item Unik",          len(meta.get("unique_items", []))),
+        ("Format PNG",         meta.get("format_dist", {}).get("png", 0)),
+        ("Format JPG",         meta.get("format_dist", {}).get("jpg", 0)),
+        ("Format JPEG",        meta.get("format_dist", {}).get("jpeg", 0)),
+        ("", ""),
+        ("HASIL FP-GROWTH (min_support = 5%)", ""),
+        ("Frequent Itemsets",  meta.get("total_frequent_itemsets", 0)),
+        ("", ""),
+        ("ASSOCIATION RULES (min_confidence = 60%)", ""),
+        ("Total Rules",        total_rules_all),
+        ("Rules Signifikan",   meta.get("total_rules_filtered", 0)),
+        ("Kriteria Signifikan","lift > 1.5 AND confidence > 65%"),
+        ("", ""),
+        ("TOP RULE TERBAIK", ""),
+        ("Antecedents → Consequents", f"{top_rule.get('antecedents','-')} → {top_rule.get('consequents','-')}"),
+        ("Support",   f"{top_rule.get('support',0)*100:.1f}%"),
+        ("Confidence",f"{top_rule.get('confidence',0)*100:.1f}%"),
+        ("Lift",      f"{top_rule.get('lift',0):.3f}"),
+    ]
+
+    for r_idx, (label, val) in enumerate(rows_info, 3):
+        ws_sum.row_dimensions[r_idx].height = 18
+        if val == "" and label == "":
+            continue
+        if val == "" and label != "":
+            # Section header
+            ws_sum.merge_cells(f"A{r_idx}:D{r_idx}")
+            c = ws_sum.cell(row=r_idx, column=1, value=label)
+            c.font      = Font(name="Calibri", bold=True, size=11, color=CLR_TEXT_LIGHT)
+            c.fill      = make_header_fill(CLR_HEADER_MID)
+            c.alignment = Alignment(vertical="center")
+            c.border    = cell_border()
+        else:
+            cl = ws_sum.cell(row=r_idx, column=1, value=label)
+            cv = ws_sum.cell(row=r_idx, column=2, value=val)
+            for c in (cl, cv):
+                c.font      = body_font(bold=(c.column == 1))
+                c.alignment = Alignment(vertical="center")
+                c.border    = cell_border()
+                ws_sum.merge_cells(f"B{r_idx}:D{r_idx}")
+
+    ws_sum.column_dimensions["A"].width = 36
+    ws_sum.column_dimensions["B"].width = 55
+    ws_sum.freeze_panes = "A3"
+
+    # ════════════════════════════════════════════════════════════════════
+    # SHEET 2 — Association Rules (semua)
+    # ════════════════════════════════════════════════════════════════════
+    ws_rules = wb.create_sheet("🔗 Association Rules")
+    data_start = add_title_cell(
+        ws_rules,
+        "Association Rules — Semua (min_confidence = 60%, diurutkan lift ↓)",
+        f"Total: {total_rules_all} rules  |  Sumber: {meta.get('source','-').upper()}  |  {ts}"
+    )
+
+    headers_rules = ["#", "Antecedents (Jika ada...)", "Consequents (...maka ada)",
+                     "Support", "Confidence", "Lift", "Leverage", "Kekuatan"]
+    apply_header_row(ws_rules, data_start, headers_rules)
+    ws_rules.row_dimensions[data_start].height = 22
+
+    for i, r in enumerate(results_cache.get("rules", []), 1):
+        row_idx = data_start + i
+        lift    = r.get("lift", 0)
+        if lift >= 2.0:   strength = "🔥 Sangat Kuat"
+        elif lift >= 1.5: strength = "⚡ Kuat"
+        else:             strength = "📌 Lemah"
+        hc = None if lift < 1.5 else (CLR_ROW_TOP if lift >= 2.0 else "FFF7ED")
+        apply_data_row(ws_rules, row_idx, [
+            i,
+            r.get("antecedents", ""),
+            r.get("consequents", ""),
+            f"{r.get('support',0)*100:.2f}%",
+            f"{r.get('confidence',0)*100:.2f}%",
+            round(r.get("lift", 0), 4),
+            round(r.get("leverage", 0), 4),
+            strength,
+        ], alt=(i % 2 == 0), highlight_color=hc)
+        ws_rules.row_dimensions[row_idx].height = 18
+
+    auto_col_width(ws_rules, min_w=8)
+    ws_rules.freeze_panes = f"A{data_start + 1}"
+
+    # ════════════════════════════════════════════════════════════════════
+    # SHEET 3 — Rules Terbaik (filtered)
+    # ════════════════════════════════════════════════════════════════════
+    ws_top = wb.create_sheet("⭐ Rules Terbaik")
+    top_rules = results_cache.get("rules_filtered", [])
+    ds_top = add_title_cell(
+        ws_top,
+        "Rules Signifikan — Lift > 1.5 & Confidence > 65%",
+        f"Total: {len(top_rules)} rules terpilih"
+    )
+
+    headers_top = ["#", "Antecedents (Jika ada...)", "Consequents (...maka ada)",
+                   "Support", "Confidence", "Lift", "Interpretasi"]
+    apply_header_row(ws_top, ds_top, headers_top, fill_color=CLR_ACCENT_BLUE)
+    ws_top.row_dimensions[ds_top].height = 22
+
+    interp_map = {
+        "abon → roti":           "Jika ada abon, kemungkinan 72.9% ada roti (3.4x lebih sering)",
+        "roti, ayam → telur":    "Paket roti+ayam hampir selalu disertai telur (73.7%)",
+        "ayam, susu → telur":    "Kombinasi ayam+susu erat dengan telur (70.0%)",
+        "pisang, susu → telur":  "Pisang+susu sering muncul bersama telur (69.3%)",
+        "jeruk, susu → telur":   "Jeruk+susu berkorelasi kuat dengan telur (68.8%)",
+    }
+
+    for i, r in enumerate(top_rules, 1):
+        row_idx = ds_top + i
+        ant, con = r.get("antecedents", ""), r.get("consequents", "")
+        key = f"{ant} → {con}"
+        interp = interp_map.get(key, f"Lift {r.get('lift',0):.2f}x di atas baseline")
+        apply_data_row(ws_top, row_idx, [
+            i, ant, con,
+            f"{r.get('support',0)*100:.2f}%",
+            f"{r.get('confidence',0)*100:.2f}%",
+            round(r.get("lift", 0), 4),
+            interp,
+        ], alt=(i % 2 == 0), highlight_color=("FFFBEB" if i % 2 == 0 else None))
+        ws_top.row_dimensions[row_idx].height = 20
+
+    auto_col_width(ws_top, min_w=8)
+    ws_top.freeze_panes = f"A{ds_top + 1}"
+
+    # ════════════════════════════════════════════════════════════════════
+    # SHEET 4 — Frequent Itemsets
+    # ════════════════════════════════════════════════════════════════════
+    ws_fi = wb.create_sheet("📦 Frequent Itemsets")
+    fi_list = results_cache.get("frequent_itemsets", [])
+    ds_fi = add_title_cell(
+        ws_fi,
+        "Frequent Itemsets (min_support = 5%)",
+        f"Total: {len(fi_list)} itemsets"
+    )
+
+    headers_fi = ["#", "Itemset", "Support (%)", "Support (raw)", "Jumlah Item"]
+    apply_header_row(ws_fi, ds_fi, headers_fi, fill_color=CLR_ACCENT_GREEN)
+    ws_fi.row_dimensions[ds_fi].height = 22
+
+    for i, row in enumerate(fi_list, 1):
+        row_idx = ds_fi + i
+        sup = row.get("support", 0)
+        apply_data_row(ws_fi, row_idx, [
+            i,
+            row.get("itemset", ""),
+            f"{sup*100:.2f}%",
+            round(sup, 4),
+            row.get("length", 1),
+        ], alt=(i % 2 == 0))
+        ws_fi.row_dimensions[row_idx].height = 18
+
+    auto_col_width(ws_fi, min_w=8)
+    ws_fi.freeze_panes = f"A{ds_fi + 1}"
+
+    # ════════════════════════════════════════════════════════════════════
+    # SHEET 5 — Frekuensi Item
+    # ════════════════════════════════════════════════════════════════════
+    ws_freq = wb.create_sheet("🥗 Frekuensi Item")
+    freq_dict = results_cache.get("item_frequency", {})
+    freq_sorted = sorted(freq_dict.items(), key=lambda x: -x[1])
+    total_tx = meta.get("total_transactions", 1) or 1
+
+    ds_freq = add_title_cell(
+        ws_freq,
+        "Frekuensi Kemunculan Item Makanan",
+        f"Dari {total_tx} transaksi valid"
+    )
+
+    headers_freq = ["#", "Item", "Frekuensi", "Persentase (%)", "Peringkat"]
+    apply_header_row(ws_freq, ds_freq, headers_freq, fill_color=CLR_HEADER_DARK)
+    ws_freq.row_dimensions[ds_freq].height = 22
+
+    for i, (item, freq_val) in enumerate(freq_sorted, 1):
+        row_idx = ds_freq + i
+        pct = freq_val / total_tx * 100
+        apply_data_row(ws_freq, row_idx, [
+            i,
+            item.capitalize(),
+            freq_val,
+            f"{pct:.1f}%",
+            f"#{i}",
+        ], alt=(i % 2 == 0))
+        ws_freq.row_dimensions[row_idx].height = 18
+
+    auto_col_width(ws_freq, min_w=8)
+    ws_freq.freeze_panes = f"A{ds_freq + 1}"
+
+    # ════════════════════════════════════════════════════════════════════
+    # SHEET 6 — Distribusi Item per Transaksi
+    # ════════════════════════════════════════════════════════════════════
+    ws_dist = wb.create_sheet("📈 Distribusi Transaksi")
+    dist_dict = results_cache.get("item_dist_per_transaction", {})
+    dist_sorted = sorted(dist_dict.items(), key=lambda x: int(x[0]))
+    total_tx_dist = sum(dist_dict.values())
+
+    ds_dist = add_title_cell(
+        ws_dist,
+        "Distribusi Jumlah Item per Transaksi",
+        f"Total {total_tx_dist} transaksi valid"
+    )
+
+    headers_dist = ["Jumlah Item", "Jumlah Transaksi", "Persentase (%)"]
+    apply_header_row(ws_dist, ds_dist, headers_dist, fill_color=CLR_HEADER_DARK)
+    ws_dist.row_dimensions[ds_dist].height = 22
+
+    for i, (k, v) in enumerate(dist_sorted, 1):
+        row_idx = ds_dist + i
+        pct = v / total_tx_dist * 100 if total_tx_dist else 0
+        apply_data_row(ws_dist, row_idx, [
+            int(k), v, f"{pct:.1f}%"
+        ], alt=(i % 2 == 0))
+        ws_dist.row_dimensions[row_idx].height = 18
+
+    auto_col_width(ws_dist, min_w=14)
+    ws_dist.freeze_panes = f"A{ds_dist + 1}"
+
+    # ── Simpan ke buffer ─────────────────────────────────────────────────
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    safe_ts = ts.replace(":", "-").replace(" ", "_")
+    fname   = f"MBG_Analytics_Hasil_{safe_ts}.xlsx"
+
+    from flask import send_file
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=fname
+    )
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
